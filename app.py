@@ -1,65 +1,56 @@
 from flask import Flask
+from flask_sock import Sock
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
 from flask_migrate import Migrate
+import os
+from flask_restful import  Api
+from flask_cors import CORS, cross_origin
+from dotenv import load_dotenv
+import os
+import logging
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_redis import FlaskRedis
+import redis
+from dotenv import load_dotenv
+
+load_dotenv()
+
+REDIS_URL = "redis://localhost:6379/0"
 
 
-app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] =  "sqlite:///app.db"
-db = SQLAlchemy(app)
-migrate = Migrate(app, db)
+db = SQLAlchemy()
+migrate = Migrate()
+api = Api()
+bcrypt = Bcrypt()
+jwt = JWTManager()
+redis_client = FlaskRedis()
+sock = Sock()
 
 
-class Users(db.Model):
-    __tablename__ = "users"
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(25))
-    password = db.Column(db.String(140))
-    questions = db.relationship('Questions', backref='users')
-
-    def __repr__(self):
-        return f"<Users {self.name}>"
+def create_app():
     
-class Questions(db.Model):
-    __tablename__ = "questions"
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    image_url = db.Column(db.String, nullable=True)
-    text = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default = db.func.now())
-    answers = db.relationship('Answers', backref='questions')
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] =  "sqlite:///app.db"
+    
+    app.config['SECRET_KEY'] = os.getenv("FLASK_APP_KEY") or "34738748374"
+    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY") or "frfrfrf"
+    app.config['JWT_TOKEN_LOCATION'] = ['headers']
+    
 
-class Tags(db.Model):
-    __tablename__ = "tags"
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
-    created_at = db.Column(db.DateTime, default = db.func.now())
+    db.init_app(app)
+    migrate.init_app(app)
+    api.init_app(app) 
+    bcrypt.init_app(app)
+    jwt.init_app(app)
+    sock.init_app(app)
+    redis_client.init_app(app, decode_responses = True)
+    CORS(app, origins="http://localhhost:3000")
+    app.logger.setLevel(logging.DEBUG)
     
-class QuestionTags(db.Model):
-    __tablename__ = "question_tags"
-    questionId = db.Column(db.Integer, db.ForeignKey('questions.id'), primary_key=True)
-    tags_id = db.Column(db.Integer, db.ForeignKey('tags.id'), primary_key=True)
-    created_at = db.Column(db.DateTime, default = db.func.now())
-
+    with app.app_context():
+        import models
+        db.create_all()
+        
+    return app
     
-class Answers(db.Model):
-    __tablename__ = "answers"
-    id = db.Column(db.Integer, primary_key=True)
-    question_id = db.Column(db.Integer, db.ForeignKey('questions.id'))
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    image_url = db.Column(db.String, nullable=True)
-    text = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default = db.func.now())
-    votes = db.relationship('Votes', backref='answers')
-    
-class Formulas(db.Model):
-    __tablename__= "formulas"
-    id = db.Column(db.Integer, primary_key=True)
-    topic = db.Column(db.String, nullable=False)
-    description = db.Column(db.Text, nullable=False)
-    
-class Votes(db.Model):
-    __tablename__= "votes"
-    id = db.Column(db.Integer, primary_key=True)
-    answer_id = db.Column(db.Integer,  db.ForeignKey('answers.id'))    
-

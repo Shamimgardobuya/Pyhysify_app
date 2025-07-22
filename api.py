@@ -1,34 +1,47 @@
 from flask import  request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import app
-from app import Users, db, app, Questions, Answers, Votes
+from models import Users,  Questions, Answers, Votes
 from flask_restful import Resource, Api
-from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
 import os, cloudinary
 import cloudinary.uploader
 import cloudinary
-import logging
 from pix2text import Pix2Text
 import requests
 import re
-from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from serializer import quest_schema, votes_schema
-
+from sqlalchemy import func
+import json
 load_dotenv()
-app.config['SECRET_KEY'] = os.getenv("FLASK_APP_KEY") or "34738748374"
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY") or "frfrfrf"
-app.config['JWT_TOKEN_LOCATION'] = ['headers']
+from websockets.asyncio.server import serve
+from app import redis_client, db, bcrypt , api, create_app, sock
 
-api = Api(app) 
-bcrypt = Bcrypt(app)
-jwt = JWTManager(app)
-CORS(app)
-app.logger.setLevel(logging.DEBUG)
 
 cloudinary.config(cloud_name = os.getenv('CLOUD_NAME'), api_key=os.getenv('API_KEY'), 
     api_secret=os.getenv('API_SECRET'))
+
+@sock.route('/upvote')
+def upvote_answer(websocket):
+    while True:
+        
+        try:
+            count_with_ans_id =  websocket.receive()#array of counter and answer id
+            answer_id, count = json.loads(count_with_ans_id)
+            #update redis
+            redis_client.get('ans'+str(answer_id))
+            redis_client.set('ans'+str(answer_id), count)
+            #insert votes table
+            new_vote = Votes(answer_id = answer_id)
+            db.session.add(new_vote)
+            db.session.commit()
+            websocket.send(redis_client.get('ans'+str(answer_id)))
+            print(f"{redis_client.get('ans'+str(answer_id))}")
+            
+        except Exception as e:
+            raise e
+        
 
 class QuestionResource(Resource):
     @jwt_required()
@@ -138,6 +151,27 @@ class VotingTrackerResource(Resource):
             response = jsonify({"message": "Can't upvote, Answer record does not exist"})
             response.status = 400
             return response
+
+    def get(self):
+        try:
+            if redis_client.keys("*ans*"):
+                all_vote_records = Votes.query.all()
+                for vote in all_vote_records:
+                    key_name = 'ans'+str(vote.answer_id)
+                    if key_name not in  redis_client.keys("*ans*"):
+                        vote_count = db.session.query(
+                            func.count(Votes.id)
+                        ).filter_by(answer_id=vote.answer_id).all()
+                        
+                        redis_client.set(key_name, vote_count)
+                    
+                data = [{'answer_id': int(key[3:]), 'votes_count': int(redis_client.get(key))} for key in redis_client.keys("*ans*")]
+                response = votes_schema.dump(data, many=True)
+                return response
+        
+        except Exception as e:
+            raise e
+        
 class UserResource(Resource):
     def check_user_exist(self, username):
         user = Users.query.filter_by(name=username).first()
