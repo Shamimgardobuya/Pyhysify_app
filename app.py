@@ -45,7 +45,7 @@ def create_app():
     jwt.init_app(app)
     sock.init_app(app)
     redis_client.init_app(app, decode_responses = True)
-    CORS(app, origins="http://localhhost:3000")
+    CORS(app, origins="http://localhost:3000")
     app.logger.setLevel(logging.DEBUG)
     
     with app.app_context():

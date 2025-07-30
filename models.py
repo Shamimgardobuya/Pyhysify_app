@@ -1,4 +1,5 @@
-from app import db
+from app import db, redis_client
+from sqlalchemy import func
 
 class Users(db.Model):
     __tablename__ = "users"
@@ -51,5 +52,22 @@ class Formulas(db.Model):
 class Votes(db.Model):
     __tablename__= "votes"
     id = db.Column(db.Integer, primary_key=True)
-    answer_id = db.Column(db.Integer,  db.ForeignKey('answers.id'))    
+    answer_id = db.Column(db.Integer,  db.ForeignKey('answers.id')) 
+    
+    def update_data_in_cache(self):
+        try:
+            db.session.add(self)
+            db.session.commit()
+
+            new_total_vote_count = db.session.query(
+                    func.count(Votes.id)
+                ).filter_by(answer_id = self.answer_id).scalar()
+            
+            redis_client.set('ans'+str(self.answer_id), new_total_vote_count)
+            return new_total_vote_count
+        except Exception as e:
+            db.session.rollback()
+            raise e
+        finally:
+            db.session.close()
 

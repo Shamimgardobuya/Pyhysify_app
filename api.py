@@ -17,30 +17,32 @@ import json
 load_dotenv()
 from websockets.asyncio.server import serve
 from app import redis_client, db, bcrypt , api, create_app, sock
-
+import gevent
 
 cloudinary.config(cloud_name = os.getenv('CLOUD_NAME'), api_key=os.getenv('API_KEY'), 
     api_secret=os.getenv('API_SECRET'))
 
+
 @sock.route('/upvote')
-def upvote_answer(websocket):
+def handler(websocket):
     while True:
-        
         try:
-            count_with_ans_id =  websocket.receive()#array of counter and answer id
-            answer_id, count = json.loads(count_with_ans_id)
-            #update redis
-            redis_client.get('ans'+str(answer_id))
-            redis_client.set('ans'+str(answer_id), count)
-            #insert votes table
-            new_vote = Votes(answer_id = answer_id)
-            db.session.add(new_vote)
-            db.session.commit()
-            websocket.send(redis_client.get('ans'+str(answer_id)))
-            print(f"{redis_client.get('ans'+str(answer_id))}")
-            
+                count_with_ans_id = websocket.receive()#array of counter and answer id
+                answer_id, count = json.loads(count_with_ans_id)
+                if count > 0: 
+                #insert vote count
+                    new_vote = Votes(answer_id = answer_id)
+                    new_vote.update_data_in_cache()
+                
+                new_count = redis_client.get('ans'+str(answer_id))
+                websocket.send(new_count)
+
         except Exception as e:
-            raise e
+                websocket.send(json.dumps(
+                        
+                        str(e)
+                    ))
+                raise e
         
 
 class QuestionResource(Resource):
@@ -123,7 +125,7 @@ class AnswersResource(Resource):
     def get(self):
         try:
             answers = Answers.query.all()
-            answers_list = [ {"text": ans.text, "image_url": ans.image_url, "question_id": ans.question_id}  for ans in answers]      
+            answers_list = [ {"id": ans.id,"text": ans.text, "image_url": ans.image_url, "question_id": ans.question_id}  for ans in answers]      
             response = jsonify({"message" : "Answers fetched successfully", "data" : answers_list})
             response.status_code = 200
             return response
