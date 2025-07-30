@@ -47,11 +47,9 @@
    5. Clean API structure with room for frontend/mobile clients
 
 🔒 Authentication
-JWT-based auth
-
-Users can register/login and post questions or answers
-
-Optional guest contributions (coming soon)
+      JWT-based auth
+         Users can register/login and post questions or answers
+         Optional guest contributions (coming soon)
 
 📚 Roadmap
  1. Frontend client for interacting with the API
