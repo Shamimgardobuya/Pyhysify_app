@@ -32,35 +32,33 @@
 3. Run Migrations
      flask db upgrade
 4. Start the App
-     flask --app api.py run
+     `gunicorn -b:5000 --workers 2 --worker-class=gevent 'api:create_app()'`
 
    
 🧠 Features
-Upload physics questions via image or text
-
-OCR math recognition using Pix2Text
-
-Community answers with upvoting
-
-Tag-based topic organization (e.g., Kinematics, Forces)
-
-Clean API structure with room for frontend/mobile clients
+   1. Upload physics questions via image or text
+   
+   2. OCR math recognition using Pix2Text
+   
+   3. Community answers with upvoting
+   
+   4. Tag-based topic organization (e.g., Kinematics, Forces)
+   
+   5. Clean API structure with room for frontend/mobile clients
 
 🔒 Authentication
-JWT-based auth
-
-Users can register/login and post questions or answers
-
-Optional guest contributions (coming soon)
+      JWT-based auth
+         Users can register/login and post questions or answers
+         Optional guest contributions (coming soon)
 
 📚 Roadmap
- Frontend client for interacting with the API
+ 1. Frontend client for interacting with the API
 
- Admin dashboard to manage content
+ 2. Admin dashboard to manage content
 
- OCR fallback to Tesseract for non-math images
+ 3. OCR fallback to Tesseract for non-math images
 
- Study/flashcard mode for learners
+ 4. Study/flashcard mode for learners
 
 🤝 Contributing
 Contributions welcome! Feel free to open issues, suggest features, or submit pull requests.
