@@ -13,6 +13,7 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from flask_redis import FlaskRedis
 import redis
 from dotenv import load_dotenv
+from flask_rest_paginate import Pagination
 
 load_dotenv()
 
@@ -26,6 +27,7 @@ bcrypt = Bcrypt()
 jwt = JWTManager()
 redis_client = FlaskRedis()
 sock = Sock()
+pagination = Pagination()
 
 
 def create_app():
@@ -45,6 +47,7 @@ def create_app():
     jwt.init_app(app)
     sock.init_app(app)
     redis_client.init_app(app, decode_responses = True)
+    pagination.init_app(app, db=db)
     CORS(app, origins="http://localhost:3000")
     app.logger.setLevel(logging.DEBUG)
     

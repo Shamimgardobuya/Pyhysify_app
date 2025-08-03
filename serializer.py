@@ -17,7 +17,6 @@ class AnswersSchema(Schema):
     question_id = fields.Int()
     image_url = fields.Str()
     text = fields.Str()
-    votes = fields.List(fields.Nested(VotesSchema))
     
 class QuestionsSchema(Schema):
     id = fields.Int()

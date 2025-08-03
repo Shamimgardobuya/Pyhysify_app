@@ -2,7 +2,7 @@ from flask import  request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import app
 from models import Users,  Questions, Answers, Votes
-from flask_restful import Resource, Api
+from flask_restful import Resource, Api, reqparse
 from dotenv import load_dotenv
 import os, cloudinary
 import cloudinary.uploader
@@ -16,33 +16,52 @@ from sqlalchemy import func
 import json
 load_dotenv()
 from websockets.asyncio.server import serve
-from app import redis_client, db, bcrypt , api, create_app, sock
+from app import redis_client, db, bcrypt , api, create_app, sock, pagination
 import gevent
+from pagination import Pagination
 
 cloudinary.config(cloud_name = os.getenv('CLOUD_NAME'), api_key=os.getenv('API_KEY'), 
     api_secret=os.getenv('API_SECRET'))
-
 
 @sock.route('/upvote')
 def handler(websocket):
     while True:
         try:
                 count_with_ans_id = websocket.receive()#array of counter and answer id
+                print(count_with_ans_id)
                 answer_id, count = json.loads(count_with_ans_id)
                 if count > 0: 
                 #insert vote count
                     new_vote = Votes(answer_id = answer_id)
                     new_vote.update_data_in_cache()
-                
+            
                 new_count = redis_client.get('ans'+str(answer_id))
-                websocket.send(new_count)
+                if new_count: 
+                    websocket.send(new_count)
+                else:
+                    new_count = redis_client.set('ans'+str(answer_id), 0)
+                    websocket.send(new_count)                                  
 
         except Exception as e:
                 websocket.send(json.dumps(
                         
                         str(e)
                     ))
-                raise e
+        
+class SingleQuestionResource(Resource):
+    def __init__(self):
+        self.reqparse = reqparse.RequestParser()
+        self.reqparse.add_argument('question_id', type = int, required = True, help = 'No question identifier provided')
+        super(SingleQuestionResource, self).__init__()
+        
+    def get(self, question_id):
+        try:
+            if (question_id):
+                questions = quest_schema.dump(Questions.query.filter_by(id=question_id).first())
+            return { 'message' : "Questions fetched successfully" , 'data' : questions}, 200
+
+        except Exception as e:
+            raise e
         
 
 class QuestionResource(Resource):
@@ -50,7 +69,6 @@ class QuestionResource(Resource):
     def post(self):
         try:
             user_name = get_jwt_identity()
-            app.logger.info(f'request{user_name}')
 
             user = Users.query.filter_by(name=user_name).first()
             if user: 
@@ -64,24 +82,41 @@ class QuestionResource(Resource):
                     text = text_from_image(local_path)
                     image_url = url_
                     question = Questions(user_id=user.id,image_url= image_url, text=text )
-                    db.session.add(question)
-                    db.session.commit()
-                            
-                    app.logger.info(f'request{request.form.get("question")}')
-                    response = jsonify({"message": "Question uploaded successfully", 'data' : [question.text,question.image_url]})
-                    response.status_code = 201
-                    return response    
+                    question_exists = Questions.query.filter_by(text=text).first()
+                    if not question_exists:
+                        db.session.add(question)
+                        db.session.commit()
+                        
+                        response = jsonify({"message": "Question uploaded successfully", 'data' : [question.text,question.image_url]})
+                        response.status_code = 201
+                        return response    
+                    response = jsonify({"message": "Question exists", 'data' : [question_exists.text,question_exists.image_url]})
+                    response.status_code = 200
+                    return response  
                 
             else:
                 return jsonify({"message": "Error user not found with the provided credentials", "data": []})
         except Exception as e:
             print(e)
             raise e
-        
+    
     def get(self):
         try:
-            questions = quest_schema.dump(Questions.query.all(),many=True)
-            return questions    
+            import sqlalchemy as sa
+            
+            query = sa.select(Questions).order_by(Questions.created_at.desc())
+            page = request.args.get("page", type = int)
+            if (page) :
+                instance_pagination = Pagination()
+                question_data = instance_pagination.paginate(query, page)
+                questions = quest_schema.dump(question_data.items,many=True)
+
+                
+                response = {"message": "Questions loaded successfully", 
+                            'data' : questions, 
+                            'next_page_data': quest_schema.dump((instance_pagination.paginate(query, question_data.next_num).items),many=True),
+                            'prev_page_data': quest_schema.dump(instance_pagination.paginate(query, question_data.prev_num).items, many=True )}, 200
+                return response   
 
         except Exception as e:
             raise e
@@ -92,7 +127,7 @@ class AnswersResource(Resource):
     def post(self):
         try:
             user_name = get_jwt_identity()
-            app.logger.info(f'request{user_name}')
+            # app.logger.info(f'request{user_name}')
 
             user = Users.query.filter_by(name=user_name).first()
             if user: 
@@ -106,15 +141,21 @@ class AnswersResource(Resource):
                     text = text_from_image(local_path)
                     question = request.form.get('question_id')
                     image_url = url_
-                    question = Answers(user_id=user.id,question_id=question,image_url= image_url, text=text )
-                    db.session.add(question)
-                    db.session.commit()
-                            
-                    app.logger.info(f'request{request.form.get("question")}')
-                    response = jsonify({"message": "Answer uploaded successfully", 'data' : [question.text,question.image_url]})
-                    response.status_code = 201
-                    return response    
-                
+                    answer = Answers(user_id=user.id,question_id=question,image_url= image_url, text=text )
+                    answer_exists = Answers.query.filter_by(text=text).first()
+                    if not answer_exists:
+                        db.session.add(answer)
+                        db.session.commit()
+                                
+                        # app.logger.info(f'request{request.form.get("question")}')
+                        response = jsonify({"message": "Answer uploaded successfully", 'data' : [answer.text,answer.image_url]})
+                        response.status_code = 201
+                        return response    
+                    response = jsonify({"message": "Answer exists", 'data' : [answer_exists.text,answer_exists.image_url]})
+                    response.status_code = 200
+                    return response  
+                    
+                    
             else:
                 response = jsonify({"message": "Error user not found with the provided credentials", "data": []})
                 response.status_code = 400
@@ -182,20 +223,21 @@ class UserResource(Resource):
         try:
             users = Users.query.all()
             user_list = [ {"name": user.name} for user in users]
-            return jsonify({"message": "Users fetched successfully", "data": user_list}), 200
+            return {"message": "Users fetched successfully", "data": user_list}, 200
         except Exception as e:
             raise e
     
     def post(self):
         
         if (request.args.get("login")) :
-            password = request.form.get("password")
-            name = request.form.get("name")
+            data = request.get_json()
+            password = data.get("password")
+            name = data.get("name")
             try:
                 user = Users.query.filter_by(name=name).first()
                 if (user and bcrypt.check_password_hash(user.password, password) ):
                     access_token = create_access_token(identity=user.name)
-                    response = jsonify({'message': 'Login Success', 'access_token': access_token})
+                    response = jsonify({'message': 'Login Success', 'data': access_token})
                     response.status_code = 200
                     return response
 
@@ -255,6 +297,7 @@ def download_image_from_url(url, save_path):
         raise Exception("Failed to download image")
 
 api.add_resource(QuestionResource, '/questions')
+api.add_resource(SingleQuestionResource,'/questions/<int:question_id>')
 api.add_resource(AnswersResource, '/answers')
 api.add_resource(VotingTrackerResource, '/votes')
 api.add_resource(UserResource, '/users')
