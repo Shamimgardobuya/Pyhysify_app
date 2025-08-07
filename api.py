@@ -10,16 +10,16 @@ import cloudinary
 from pix2text import Pix2Text
 import requests
 import re
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt, create_refresh_token
 from serializer import quest_schema, votes_schema
 from sqlalchemy import func
 import json
 load_dotenv()
 from websockets.asyncio.server import serve
-from app import redis_client, db, bcrypt , api, create_app, sock, pagination
+from app import redis_client, db, bcrypt , api, create_app, sock, pagination, jwt
 import gevent
 from pagination import Pagination
-
+from datetime import timedelta
 cloudinary.config(cloud_name = os.getenv('CLOUD_NAME'), api_key=os.getenv('API_KEY'), 
     api_secret=os.getenv('API_SECRET'))
 
@@ -47,7 +47,23 @@ def handler(websocket):
                         
                         str(e)
                     ))
-        
+                
+
+class TokenRefreshResource(Resource):
+    @jwt_required(refresh=True)
+    def post(self):
+        identity = get_jwt_identity()
+        acces_token  = create_access_token(identity=identity)
+        return jsonify({'access_token': acces_token})
+    
+class TokenBlacklistResource(Resource):
+
+    @jwt_required()
+    def post(self):
+            token = get_jwt()['jti']
+            redis_client.set(token,'', ex=timedelta(hours=1) )
+            return token is not None
+
 class SingleQuestionResource(Resource):
     def __init__(self):
         self.reqparse = reqparse.RequestParser()
@@ -237,10 +253,8 @@ class UserResource(Resource):
                 user = Users.query.filter_by(name=name).first()
                 if (user and bcrypt.check_password_hash(user.password, password) ):
                     access_token = create_access_token(identity=user.name)
-                    response = jsonify({'message': 'Login Success', 'data': access_token})
-                    response.status_code = 200
-                    return response
-
+                    refresh_token = create_refresh_token(identity=user.name)
+                    return {'message': 'Login Success', 'data': access_token, 'refresh_token' : refresh_token} , 200                 
             except Exception as e:
                 raise e
         else:
@@ -301,7 +315,5 @@ api.add_resource(SingleQuestionResource,'/questions/<int:question_id>')
 api.add_resource(AnswersResource, '/answers')
 api.add_resource(VotingTrackerResource, '/votes')
 api.add_resource(UserResource, '/users')
-
-
-        
-    
+api.add_resource(TokenRefreshResource, '/users/refresh')
+api.add_resource(TokenBlacklistResource, '/logout')
