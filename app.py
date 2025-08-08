@@ -17,10 +17,11 @@ from dotenv import load_dotenv
 from flask_rest_paginate import Pagination
 from jwt.exceptions import ExpiredSignatureError, InvalidIssuerError, InvalidAudienceError, InvalidTokenError
 from werkzeug.exceptions import HTTPException
+from config import Config
 
 load_dotenv()
 
-REDIS_URL = "redis://localhost:6379/0"
+REDIS_URL = os.getenv('REDIS_URL')
 
 
 db = SQLAlchemy()
@@ -36,16 +37,7 @@ pagination = Pagination()
 def create_app():
     
     app = Flask(__name__)
-    app.config["SQLALCHEMY_DATABASE_URI"] =  os.getenv('DATABASE_URI') or "sqlite:///app.db"
-    
-    app.config['SECRET_KEY'] = os.getenv("FLASK_APP_KEY") or "34738748374"
-    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY") or "frfrfrf"
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
-    app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
-    app.config["PROPAGATE_EXCEPTIONS"] = True
-    app.config['JWT_TOKEN_LOCATION'] = ['headers']
-    
-
+    app.config.from_object(Config)
     db.init_app(app)
     migrate.init_app(app, db)
     api.init_app(app) 
@@ -55,18 +47,19 @@ def create_app():
     sock.init_app(app)
     redis_client.init_app(app, decode_responses = True)
     pagination.init_app(app, db=db)
-    CORS(app, origins="http://localhost:3000")
+    CORS(app, origins=os.getenv("FRONTEND_URL"))
     app.logger.setLevel(logging.DEBUG)
+    
     @jwt.expired_token_loader
     def my_expired_token_callback(jwt_header, jwt_payload):
-            return jsonify(code="token_expired", message="Your session has expired. Please log in again."), 401
-    
+        return jsonify(code="token_expired", message="Your session has expired. Please log in again."), 401
+        
     @jwt.token_in_blocklist_loader
     def check_if_token_is_revoked(jwt_header, jwt_payload: dict):
         jti = jwt_payload["jti"]
         token_in_redis = redis_client.get(jti)
         return token_in_redis is not None
-    
+        
     @jwt.invalid_token_loader
     def check_token_invalid(e):
         return jsonify(code="invalid_token", message="Your token is invalid. Please log in to use the correct one."), 401
@@ -77,4 +70,6 @@ def create_app():
         db.create_all()
         
     return app
+    
+    
     
